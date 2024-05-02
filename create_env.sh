@@ -15,11 +15,11 @@ conda activate base \
     || { echo '>>> Activating base failed.'; exit 1; }
 
 # Remove environment if exists
-conda remove --yes --name $ENVNAME --all \
+mamba remove --yes --name $ENVNAME --all \
     || { echo '>>> Removing environment failed.'; exit 1; }
 
 # Create environment
-conda create --yes --name $ENVNAME python=3.10 \
+mamba create --yes --name $ENVNAME python=3.10 \
     pytorch torchvision torchaudio lightning \
     numpy scikit-learn optuna optuna-integration \
     pandas xarray dask netcdf4 zarr geopandas \
