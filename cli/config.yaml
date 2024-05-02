@@ -32,6 +32,7 @@ data:
     machflow_data_path:
     - "/data/basil/harmonized_basins.zarr/"
     - "/Users/kraftb/Work/machflow/data/machflow_engression/machflow_data/harmonized_basins.zarr"
+    - "/home/kraftb/machflow_data/harmonized_basins.zarr/"
     features:
     - P
     - T
