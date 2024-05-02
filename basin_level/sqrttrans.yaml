@@ -1,3 +1,0 @@
-criterion:
-  name: l2
-  sqrt_transform: true

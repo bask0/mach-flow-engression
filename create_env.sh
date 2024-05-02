@@ -6,7 +6,7 @@
 # Environment setup for conda environment $ENVNAME  #
 #####################################################
 
-ENVNAME="machflow"
+ENVNAME="engression"
 
 # Go to base conda environment
 eval "$(conda shell.bash hook)"

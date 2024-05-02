@@ -43,7 +43,8 @@ class PredictionWriter(BasePredictionWriter):
         ds: xr.Dataset = pdl.dataset.ds
         out_ds = ds.copy()
 
-        taus = [p.tau for p in predictions[0]]
+        # Each prediction contrains n members.
+        n_members = len(predictions[0])
 
         encoding = {}
 
@@ -62,18 +63,17 @@ class PredictionWriter(BasePredictionWriter):
 
         for t, target in enumerate(pdl.dataset.targets):
             new_target_name = target + '_mod'
-            da = xr.full_like(ds[target], np.nan).expand_dims(tau=taus).copy().compute()
+            da = xr.full_like(ds[target], np.nan).expand_dims(member=range(n_members)).copy().compute()
             for outputs in predictions:
-                for output in outputs:
-                    coords = output.coords
-                    tau = output.tau
+                for m, member in enumerate(outputs):
+                    coords = member.coords
                     for i, (station, start_date, end_date) in enumerate(
                             zip(coords.station, coords.start_date, coords.end_date)):
                         da.loc[{
                             'station': station,
                             'time': slice(start_date, end_date),
-                            'tau': tau
-                        }] = output.dtargets[i, t, warmup_size:].detach().numpy()
+                            'member': m
+                        }] = member.dtargets[i, t, warmup_size:].detach().numpy()
 
             out_ds[new_target_name] = da
 
@@ -150,6 +150,11 @@ class MyLightningCLI(LightningCLI):
             '--skip_tuning',
             action='store_true',
             help='skip tuning and do xval; tuning must be present.')
+        parser.add_argument(
+            '--config_name',
+            type=str,
+            default='default',
+            help='configuration name.')
 
         # Criterion routine args
         # -------------------------------------
@@ -159,15 +164,25 @@ class MyLightningCLI(LightningCLI):
             default='l2',
             help='the criterion to use for optimization, defauls to \'l2\'.')
         parser.add_argument(
-            '--criterion.sqrt_transform',
-            action='store_true',
-            help='whether to compute loss on sqrt transformed scale.')
-        parser.add_argument(
-            '--criterion.inference_taus',
-            nargs='+',
+            '--criterion.es_beta',
             type=float,
-            default=[0.05, 0.25, 0.5, 0.75, 0.95],
-            help='tau values to evaluate in inference; only applies for distribution-aware criterions.')
+            help='beta coefficient for energy loss (0, 2).')
+        parser.add_argument(
+            '--criterion.es_length',
+            type=int,
+            help='length of energy loss window.')
+        parser.add_argument(
+            '--criterion.noise_dim',
+            type=int,
+            help='the noise diensionality.')
+        parser.add_argument(
+            '--criterion.noise_std',
+            type=float,
+            help='the noise standard devaition.')
+        parser.add_argument(
+            '--criterion.num_members',
+            type=int,
+            help='the number of members to predict.')
 
         # Linking args
         # -------------------------------------
@@ -186,9 +201,15 @@ class MyLightningCLI(LightningCLI):
         parser.link_arguments(
             'criterion.name', 'model.init_args.criterion', apply_on='parse')
         parser.link_arguments(
-            'criterion.sqrt_transform', 'model.init_args.sqrt_transform', apply_on='parse')
+            'criterion.es_beta', 'model.init_args.es_beta', apply_on='parse')
         parser.link_arguments(
-            'criterion.inference_taus', 'model.init_args.inference_taus', apply_on='parse')
+            'criterion.es_length', 'model.init_args.es_length', apply_on='parse')
+        parser.link_arguments(
+            'criterion.noise_dim', 'model.init_args.noise_dim', apply_on='parse')
+        parser.link_arguments(
+            'criterion.noise_std', 'model.init_args.noise_std', apply_on='parse')
+        parser.link_arguments(
+            'criterion.num_members', 'model.init_args.num_members', apply_on='parse')
 
     @staticmethod
     def id2version(prefix: str, id: int) -> str:

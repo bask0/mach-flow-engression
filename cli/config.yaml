@@ -31,14 +31,41 @@ data:
   init_args:
     machflow_data_path:
     - "/data/basil/harmonized_basins.zarr/"
-    - "/mydata/machflow/basil/data/harmonized_basins.zarr/"
+    - "/Users/kraftb/Work/machflow/data/machflow_engression/machflow_data/harmonized_basins.zarr"
     features:
     - P
     - T
     targets:
     - Qmm
     stat_features:
-    - 'area'
+    - area
+    - abb
+    - atb
+    - btk
+    - dhm
+    - glm
+    - kwt
+    - pfc
+    - slp
+    - pus01
+    - pus02
+    - pus03
+    - pus04
+    - pus05
+    - pus06
+    - pus07
+    - pus08
+    - pus10
+    - pus13
+    - pus14
+    - pus15
+    - pus19
+    - pus21
+    - pus22
+    - pus24
+    - pus25
+    - pus26
+    - pus29
     train_window_size: 730
     window_min_count: 30
     train_num_samples_per_epoch: 30
@@ -46,7 +73,7 @@ data:
     drop_all_nan_stations: true
     num_cv_folds: 8
     fold_nr: 0
-    use_additional_basins_as_training: false
+    use_additional_basins_as_training: true
     train_tranges:
     - "1961,1992"
     - "2002,2013"
@@ -59,8 +86,8 @@ data:
     - "1995,1999"
     - "2016,2020"
     predict_tslice:
-    - "1961"
-    - "2023"
+    - "2011"
+    - "2022"
     norm_features: true
     norm_stat_features: true
     norm_targets: true
@@ -73,5 +100,9 @@ optimizer:
     lr: 0.01
     weight_decay: 0.01
 criterion:
-  name: l2
-  sqrt_transform: false
+  name: es
+  es_beta: 1.0
+  es_length: 1
+  noise_dim: 10
+  noise_std: 1
+  num_members: 5

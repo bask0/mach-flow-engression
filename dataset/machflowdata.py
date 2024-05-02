@@ -314,7 +314,7 @@ class MachFlowDataModule(pl.LightningDataModule):
             additional_basins = [basin for basin in additional_basins if basin in stations]
             self.train_basins += additional_basins
 
-        self.predict_basins = self.ds.station.values
+        self.predict_basins = list(self.ds.station.where(self.ds.folds.load() >= 0, drop=True).values)  # self.ds.station.values
         self.add_cv_set_ids()
 
         # Data normalization.

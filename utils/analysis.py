@@ -238,8 +238,8 @@ def xval_station_metrics(
         obs = ds[target]
         mod = ds[target + '_mod']
 
-        if 'tau' in mod.dims:
-            mod = mod.sel(tau=0.5).drop_vars(['tau'])
+        if 'member' in mod.dims:
+            mod = mod.mean('member')
 
         met = compute_metrics(obs=obs, mod=mod, metrics=metrics, dim='time')
         mets.append(met)
@@ -418,7 +418,7 @@ def plot_xval_cdf(
             tranges=time_slices,
             mask_is_ds=True)
 
-    ds = ds.sel(tau=0.5)
+    ds = ds.mean('member')
 
     mask = (ds[mod_name].notnull() & ds[ref_name].notnull()).compute()
     ds[mod_name] = ds[mod_name].where(mask).compute()

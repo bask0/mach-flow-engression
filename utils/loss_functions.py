@@ -1,281 +1,11 @@
-
-
+import math
+import logging
 import torch
 from torch import nn
 from torch import Tensor
-import math
-import logging
+from torch.linalg import vector_norm
 
 logger = logging.getLogger('pytorch_lightning')
-
-
-class BetaNLLLoss(nn.Module):
-
-    def __init__(self, reduction: str = 'mean', beta: float = 0.5) -> None:
-        r"""Creates beta-NLL criterion
-
-        The beta-NLL criterion extends the standard Gaussian NLL criterion. The beta
-        parameter specifies a weight fo the errors from 0 to 1, 0 yielding standard NLL
-        criterion, and 1 weighing as in MSE (but still with uncertainty). This solves a
-        problem with standard NLL, which tends to emphasize regions with low variance
-        during trainging. See https://arxiv.org/pdf/2203.09168.pdf
-
-        Notes:
-            When beta is set to 0, this loss is equivalent to the NLL loss. Beta of 1 corresponds
-            to equal weighting of low and high error points.
-
-        Args:
-            reduction: Specifies the reduction to apply to the output:
-                ``'none'`` | ``'mean'`` | ``'sum'``. ``'none'``: no reduction will be applied,
-                ``'mean'``: the sum of the output will be divided by the number of
-                elements in the output, ``'sum'``: the output will be summed. Default: ``'mean'``
-            beta: Parameter from range [0, 1] controlling relative weighting between data points,
-                where `0` corresponds to high weight on low error points and `1` to an equal weighting.
-                The default, 0.5, has been reported to work best in general.
-
-        Shape:
-            - mean: (batch_size, ...).
-            - variance: (batch_size, ...), same shape as the mean.
-            - target: (batch_size, ...), same shape as the mean.
-            - output: scalar, or, if `reduction` is ``'none'``, then (batch_size, ...), same shape as the input.
-        """
-        super().__init__()
-
-        if reduction not in ('none', 'mean', 'sum'):
-            raise ValueError(
-                f'argument `reduction` must be one of (\'none\', \'mean\', \'sum\'), is {reduction}.'
-            )
-
-        if not (0 <= beta <= 1):
-            raise ValueError(
-                f'`beta` must be a value in the range [0, 1], is {beta}.'
-            )
-
-        self.reduction = reduction
-        self.beta = beta
-
-        self._FILL_NLL = None
-        self._FILL_BETA = None
-
-    def forward(
-            self,
-            mean: Tensor,
-            variance: Tensor,
-            target: Tensor,
-            mask: Tensor | None = None) -> Tensor:
-        """Compute beta-NLL loss (https://arxiv.org/pdf/2203.09168.pdf)
-
-        Args:
-            mean: Predicted mean of shape B x D
-            variance: Predicted variance of shape B x D
-            target: Target of shape B x D
-            mask: A mask indicating valid (i.e., finite and non-NaN) elements in the `target`.
-                `None` (default), implies that no missing values are present in `target`.
-
-        Returns:
-            Loss per batch element of shape B
-        """
-
-        # This value replaces NaN in the variance, yields aproximately 0 from gaussian_nll_loss.
-        if self._FILL_NLL is None:
-            self._FILL_NLL = torch.tensor(1 / (2 * math.pi), requires_grad=False, device=mean.device, dtype=mean.dtype)
-        # This value replaces NaN in the variance, yields 0 from beta weighing.
-        if self._FILL_BETA is None:
-            self._FILL_BETA = torch.tensor(0.0, requires_grad=False, device=mean.device, dtype=mean.dtype)
-
-        if mask is not None:
-            variance = variance.where(mask, self._FILL_NLL)
-
-        loss = nn.functional.gaussian_nll_loss(
-            input=mean,
-            target=target,
-            var=variance,
-            full=True,
-            reduction='none'
-        )
-
-        if self.beta > 0.0:
-            if mask is not None:
-                variance = variance.where(mask, self._FILL_BETA)
-            loss = loss * variance.detach() ** self.beta
-
-        if self.reduction == 'mean':
-            loss = loss.mean()
-        elif self.reduction == 'sum':
-            loss = loss.sum()
-
-        return loss
-
-
-class BaseQLoss(nn.Module):
-    def __init__(self, reduction='none') -> None:
-        r"""Creates element-wise distribution-based loss without reduction. Must be subclassed.
-
-        Note: The error function `error_function` mut be overridden in the subclass.
-
-        Shape:
-            - mean: (batch_size, ...).
-            - target: (batch_size, ...), same shape as the mean.
-            - output: (batch_size, ...), same shape as the mean.
-
-        Args:
-            reduction: for compatibility, has no effect.
-        """
-        super().__init__()
-
-    def forward(
-            self,
-            input: Tensor,
-            target: Tensor,
-            tau: float | Tensor) -> Tensor:
-        """Compute the losss.
-
-        Args:
-            input: Predicted mean of shape (B, ...)
-            target: Target of shape (B, ...)
-            tau: The probability to evaluate, in range [0, 1].
-
-        Returns:
-            Loss per batch element of shape (B, ...)
-        """
-
-        if not (0.0 <= tau <= 1.0):
-            raise ValueError(
-                f'argument `tau` is out of range [0, 1] with `tau`={tau}`'
-            )
-
-        err = self.error_function(input=input, target=target, tau=tau)
-
-        return err
-
-    def error_function(self, input: Tensor, target: Tensor, tau: float | Tensor) -> Tensor:
-        raise NotImplementedError(
-            '`err_fun` must be defined in subclass.'
-        )
-
-
-class QLoss(BaseQLoss):
-
-    def __init__(self, reduction='none') -> None:
-        r"""Creates element-wise quantile loss without reduction.
-
-        Shape:
-            - mean: (batch_size, ...).
-            - target: (batch_size, ...), same shape as the mean.
-            - output: (batch_size, ...), same shape as the mean.
-        """
-        super().__init__()
-
-    def error_function(self, input: Tensor, target: Tensor, tau: float | Tensor) -> Tensor:
-        err = target - input
-        err = torch.max((tau - 1) * err, tau * err)
-        return err
-
-
-class ELoss(BaseQLoss):
-
-    def __init__(self, reduction='none') -> None:
-        r"""Creates element-wise expectile loss without reduction.
-
-        Shape:
-            - mean: (batch_size, ...).
-            - target: (batch_size, ...), same shape as the mean.
-            - output: (batch_size, ...), same shape as the mean.
-        """
-        super().__init__()
-
-    def error_function(self, input: Tensor, target: Tensor, tau: float | Tensor) -> Tensor:
-        err = target - input
-        err2 = err ** 2
-        return torch.where(err >= 0.0, err2 * tau, err2 * (1 - tau))
-
-
-class NSELoss(nn.Module):
-
-    def __init__(self, reduction: str = 'mean', constant: float = 0.1) -> None:
-        r"""Creates NSE* criterion (not NSE, see details below)
-
-        NSE* is based on the Nash-Sutcliffe Modelling Efficiency Coefficient. The NSE* loss is based on
-        Kratzert et al. (2019): doi: 10.5194/hess-23-5089-2019
-
-        Instead of ranging from -inf to 1, it ranges from 0 to inf and 0 is the optimum (i.e., we can still use
-        minimization).
-
-        It is calculated as `NSE* = 1 / N  (y_hat - y) ** 2 / (s(b) + e) ** 2`, where N is the number of samples,
-        s(b) is the standard deviation of the observed basin runoff based on the training period, and e is a constant 
-        term used to avoid exploding loss with small basin variance.
-
-        The NSE* is calculated sample-wise first and then averaged across batch elements (samples).
-
-        Notes:
-            The NSE above zero indicates better performance than taking the mean of the observations.
-
-        Args:
-            reduction: Specifies the reduction to apply to the output. This arguments is used htere for compatibility
-                and takes no effect. If another argument than 'mean' is passed, an error is raised. This is because
-                the NSE must computed per sample first.
-            constant: the constant term added to the basin standard deviation, default is 0.1 as in the source.
-
-        Shape:
-            - mean: (batch_size, ...).
-            - target: (batch_size, ...), same shape as the mean.
-            - output: scalar.
-        """
-        super().__init__()
-
-        if reduction != 'mean':
-            raise ValueError(
-                'invalid argument: reduction must be \'mean\'.'
-            )
-
-        self.constant = constant
-
-    @staticmethod
-    def unsqueeze_like(x: torch.Tensor, ref: torch.Tensor):
-        n_unsqueezes = ref.ndim - x.ndim
-        if n_unsqueezes == 0:
-            return x
-        else:
-            return x[(...,) + (None,) * n_unsqueezes]
-
-    @staticmethod
-    def sigmoid_k(x: Tensor, mu: float, s: float) -> Tensor:
-        return (1. / (1. + torch.exp(-(x - mu) / s)))
-
-    def forward(
-            self,
-            input: Tensor,
-            target: Tensor,
-            basin_std: Tensor) -> Tensor:
-        """Compute the NSE losss.
-
-        Args:
-            mean: Predicted mean of shape (B, ...)
-            target: Target of shape (B, ...)
-            basin_std: The basin standard deviation, a Tensor of shape (B,).
-
-        Returns:
-            Loss per batch element of shape B
-        """
-
-        mask = target.isfinite()
-        red_dims = tuple(range(1, mask.ndim))
-
-        basin_norm = (self.unsqueeze_like(basin_std, mask) + self.constant) ** 2
-
-        target = target.where(mask, input)
-        element_err = (target - input) ** 2
-        element_err /= basin_norm
-
-        element_num_valid = mask.sum(red_dims)
-        element_weight = self.sigmoid_k(x=element_num_valid, mu=100, s=20)
-
-        batch_err = element_err.sum(red_dims) / element_num_valid
-
-        err = (batch_err * element_weight).sum() / element_weight.sum()
-
-        return err
-
 
 
 class RegressionLoss(nn.Module):
@@ -318,7 +48,7 @@ class RegressionLoss(nn.Module):
     * target: (N, *), same shape as the input
     """
 
-    LOSS_FUNCTIONS = ('l1', 'l2', 'huber', 'nse', 'quantile', 'expectile')
+    LOSS_FUNCTIONS = ('l1', 'l2', 'huber')
     LOSS_FUNCTIONS_WITH_TAU = ('quantile', 'expectile')
 
     def __init__(
@@ -329,20 +59,15 @@ class RegressionLoss(nn.Module):
         """Initialize RegressionLoss.
 
         Args:
-            criterion : str (``'l1'`` | ``'l2'`` | ``'huber'`` | ``'nse'`` | ``'quantile'`` | ``'expectile'``)
+            criterion : str (``'l1'`` | ``'l2'`` | ``'huber'``)
                 ``'l1'`` for Mean Absolute Error (MAE),
                 ``'l2'`` for Mean Squared Error (MSE),
                 ``'huber'`` for Huber loss (mix of l1 and l2),
-                ``'nse'`` for Nash-Sutcliffe modelling efficiency coefficient (NSE),
-                ``'quantile'`` for quantile loss,
-                ``'expectile'`` for quantile loss,
             sample_wise : bool
                 Whether to calculate sample-wise loss first and average then (`True`, default) or to
                 calculate the loss across all elements. The former weights each batch element equally,
                 the latter weights each observation equally. This is relevant especially with many NaN
                 in the target tensor, while there is no difference without NaN.
-            sqrt_transform: Whether to sqrt-transform the predictions and targets before computing the loss.
-                Note that negative targets are clamped to 0. Default is False.
 
         """
 
@@ -356,20 +81,12 @@ class RegressionLoss(nn.Module):
                 f'argument `criterion` must be one of {loss_functions_str}, is \'{criterion}\'.'
             )
 
-        self.has_tau = criterion in self.LOSS_FUNCTIONS_WITH_TAU
         self.criterion = criterion
         self.sample_wise = sample_wise
 
         loss_fn_args: dict = dict(reduction='none')
         if self.criterion == 'huber':
             loss_fn_args.update(dict(delta=0.3))
-        elif self.criterion == 'nse':
-            loss_fn_args.update(dict(reduction='mean'))
-            if not self.sample_wise:
-                raise ValueError(
-                    'Cannot use criterion \'nse\' with sample_wise being False, as the mean observations '
-                    'must be calculated per sample. Use `sample_wise=True` with NSE.'
-                )
 
         self.sqrt_transform = sqrt_transform
 
@@ -377,54 +94,28 @@ class RegressionLoss(nn.Module):
             'l1': nn.L1Loss,
             'l2': nn.MSELoss,
             'huber': nn.HuberLoss,
-            'nse': NSELoss,
-            'quantile': QLoss,
-            'expectile': ELoss
         }[self.criterion](**loss_fn_args)
 
     def forward(
             self,
             input: Tensor,
             target: Tensor,
-            tau: float | Tensor | None = None,
             basin_std: Tensor | None = None) -> Tensor:
         """Forward call, calculate loss from input and target, must have same shape.
 
         Args:
             input: Predicted mean of shape (B x ...)
             target: Target of shape (B x ...)
-            tau: the probability for quantile or expectile loss, a float in the range [0, 1].
-            basin_std: The observation time series standard deviation with shape (B, ). Exclusively required
-                for 'nse' criterion.
 
         Returns:
             The loss, a scalar.
         """
 
-        if self.sqrt_transform:
-            input = torch.sqrt(input)
-            target = torch.sqrt(target.clamp(min=0))
-
-        if self.criterion == 'nse':
-            if basin_std is None:
-                raise ValueError(
-                    'argument `basin_std` required with `criterion`=\'nse\'.'
-                )
-
-            return self.loss_fn(input=input, target=target, basin_std=basin_std)
-
         mask = target.isfinite()
         # By setting target to input for NaNs, we set gradients to zero.
         target = target.where(mask, input)
 
-        if self.criterion in ['quantile', 'expectile']:
-            if tau is None:
-                raise ValueError(
-                    f'argument `tau` required with `criterion`=\'{self.criterion}\'.'
-                )
-            element_error = self.loss_fn(input, target, tau)
-        else:
-            element_error = self.loss_fn(input, target)
+        element_error = self.loss_fn(input, target)
 
         if self.sample_wise:
             red_dims = tuple(range(1, element_error.ndim))
@@ -441,4 +132,110 @@ class RegressionLoss(nn.Module):
         sample_wise = self.sample_wise
         sqrt_transform = self.sqrt_transform
         s = f'RegressionLoss({criterion=}, {sample_wise=}, {sqrt_transform=})'
+        return s
+
+
+class EnergyLoss(nn.Module):
+    """Energy loss that ignore NaN in target.
+    https://arxiv.org/pdf/2307.00835
+    The loss funtion allows for having missing / non-finite values in the target.
+
+    Shape
+    -----
+    * input: (N, *), where * means, any number of additional dimensions
+    * target: (N, *), same shape as the input
+    """
+
+    def __init__(
+            self,
+            beta: float = 1.0,
+            es_length: int = 1) -> None:
+        """Initialize RegressionLoss.
+
+        Args:
+            beta : float
+                Power parameter in the energy score, a float (0, 2). Default is 1.0.
+            es_length: int
+                Length of sequence fed jointly into the loss function, an integer > 0. Default is 1.
+
+        """
+
+        super(EnergyLoss, self).__init__()
+
+        self.beta = beta
+        self.es_length = es_length
+        self.criterion = 'es'
+
+    def forward(
+            self,
+            input0: Tensor,
+            input1: Tensor,
+            target: Tensor) -> Tensor:
+        """Forward call, calculate loss from input0, input1,  and target, must have same shape.
+
+        Args:
+            input0 (torch.Tensor): (batch, sequence) iid samples from the estimated distribution.
+            input1 (torch.Tensor): (batch, sequence) iid samples from the estimated distribution.
+            target (torch.Tensor): (batch, sequence) iid samples from the true distribution.
+
+        Returns:
+            The loss, a scalar.
+        """
+
+        EPS = 0 if float(self.beta).is_integer() else 1e-5
+
+        # (batch, sequence) -> (batch, L = sequence // es_length, es_length)
+        target = self.reshape_to_es_length(target, self.es_length)
+        input0 = self.reshape_to_es_length(input0, self.es_length)
+        input1 = self.reshape_to_es_length(input1, self.es_length)
+
+        # (batch, L, es_length)
+        mask = target.isfinite()
+        mask_num_finite = mask.sum((-2, -1))
+
+        # (batch, L, es_length)
+        diff0 = input0 - target.where(mask, input0)
+        diff1 = input1 - target.where(mask, input1)
+
+        # (batch, L, es_length)
+        input_diff = (input0 - input1).where(mask, 0.0)
+
+        # (batch, L)
+        s1 = (
+            0.5 * self.mean_masked((vector_norm(diff0, 2, dim=-1) + EPS).pow(self.beta), mask_num_finite, dim=-1) +
+            0.5 * self.mean_masked((vector_norm(diff1, 2, dim=-1) + EPS).pow(self.beta), mask_num_finite, dim=-1)
+        )
+
+        # (batch, L)
+        s2 = self.mean_masked((vector_norm(input_diff, 2, dim=-1) + EPS).pow(self.beta), mask_num_finite, dim=-1)
+
+        # (batch, L)
+        element_loss = s1 - s2 / 2
+
+        # (1,)
+        loss = element_loss.mean()
+
+        return loss
+
+    def reshape_to_es_length(self, x: Tensor, es_length: int) -> Tensor:
+        if x.ndim == 1:
+            x = x.unsqueeze(-1)
+
+        if es_length == 1:
+            return x.unsqueeze(-1)
+
+        batch_size, seq_length = x.shape
+        n_drop = seq_length % es_length
+
+        x = x[:, n_drop:].view(batch_size, -1, es_length)
+
+        return x
+
+    def mean_masked(self, x: Tensor, mask_num_finite: Tensor, dim: int = -1) -> Tensor:
+        return x.sum(dim) / mask_num_finite
+
+    def __repr__(self) -> str:
+        beta = self.beta
+        es_length = self.es_length
+        s = f'EnergyLoss({beta=}, {es_length=})'
         return s

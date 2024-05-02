@@ -251,13 +251,13 @@ class Tuner(object):
         self.overwrite = cli.config['overwrite']
         self.is_dev = cli.config['dev']
         self.skip_tuning = cli.config['skip_tuning']
+        self.config_name = cli.config['config_name']
         search_spaces = get_search_spaces()
 
         self.sampler = sampler
         self.pruner = pruner
         self.log_dir = log_dir
         self.exp_name = get_exp_name()
-        self.config_name = get_config_name(cli)
         self.model = get_model_name_from_cli(cli)
         self.num_xval_folds = cli.config['data']['init_args']['num_cv_folds']
         self.targets = cli.config['data']['init_args']['targets']
@@ -270,10 +270,10 @@ class Tuner(object):
 
         self.search_space = search_spaces[self.model]
 
-        self.exp_path_tune = os.path.join(self.log_dir, self.exp_name, self.config_name, self.model, 'tune')
+        self.exp_path_tune = os.path.join(self.log_dir, self.config_name, 'tune')
         self.db_path_tune = os.path.join(self.exp_path_tune, 'optuna.db')
 
-        self.exp_path_xval = os.path.join(self.log_dir, self.exp_name, self.config_name, self.model, 'xval')
+        self.exp_path_xval = os.path.join(self.log_dir, self.config_name, 'xval')
         self.db_path_xval = os.path.join(self.exp_path_xval, 'optuna.db')
 
         self.test_time_slice = self.get_test_slice(cli)
