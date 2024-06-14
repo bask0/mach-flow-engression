@@ -117,8 +117,6 @@ def postprocess_results(
         runs_dir: the directory containing the results, default is
             `/net/argon/landclim/kraftb/machflow_engression/runs`
 
-    Returns:
-        An xr.Dataset containing all the folds and configurations.
     """
 
     t = time.time()
