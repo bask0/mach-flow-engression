@@ -80,7 +80,7 @@ if __name__ == '__main__':
     tuner = Tuner(
         sampler=sampler,
         pruner=pruner,
-        log_dir='/Users/kraftb/Work/machflow/data/machflow_engression/runs'
+        log_dir='/net/argon/landclim/kraftb/machflow_engression/runs/'
         )
 
     tuner.tune(n_trials=20)

@@ -30,9 +30,7 @@ data:
   class_path: dataset.machflowdata.MachFlowDataModule
   init_args:
     machflow_data_path:
-    - "/data/basil/harmonized_basins.zarr/"
-    - "/Users/kraftb/Work/machflow/data/machflow_engression/machflow_data/harmonized_basins.zarr"
-    - "/home/kraftb/machflow_data/harmonized_basins.zarr/"
+    - "/net/argon/landclim/kraftb/machflow_engression/harmonized_basins.zarr/"
     features:
     - P
     - T
@@ -76,16 +74,11 @@ data:
     fold_nr: 0
     use_additional_basins_as_training: true
     train_tranges:
-    - "1961,1992"
-    - "2002,2013"
+    - "1961,2004"
     valid_tranges:
-    - "1993,1994"
-    - "2000,2001"
-    - "2014,2015"
-    - "2021,2023"
+    - "2005,2010"
     test_tranges:
-    - "1995,1999"
-    - "2016,2020"
+    - "2011,2022"
     predict_tslice:
     - "2011"
     - "2022"
@@ -106,4 +99,4 @@ criterion:
   es_length: 1
   noise_dim: 10
   noise_std: 1
-  num_members: 5
+  num_members: 1000
