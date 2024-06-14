@@ -224,6 +224,15 @@ class EnergyLoss(nn.Module):
         if es_length == 1:
             return x.unsqueeze(-1)
 
+        if x.ndim == 3:
+            if x.shape[1] != 1:
+                raise ValueError(
+                    f'for a 3D tensor, the second dimension must have size 1 (is {x.shape[1]}) because '
+                    'more than one target variable not supported.'
+                )
+
+            x = x.squeeze(1)
+
         batch_size, seq_length = x.shape
         n_drop = seq_length % es_length
 
