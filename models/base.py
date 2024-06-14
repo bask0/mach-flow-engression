@@ -122,7 +122,7 @@ class LightningNet(pl.LightningModule):
 
         if step_type == 'pred':
             preds = ReturnPattern(
-                dtargets=self.denormalize_target(target_hat0.detach()),
+                dtargets=self.denormalize_target(target_hat0.detach()).cpu(),
                 coords=batch.coords,
             )
             return torch.zeros(1), preds
