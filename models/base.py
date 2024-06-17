@@ -305,7 +305,7 @@ class TemporalNet(LightningNet, abc.ABC):
 
         self.out_activation = torch.nn.Softplus()
 
-    """Implements a temporla base lightning network."""
+    """Implements a temporal base lightning network."""
     @abc.abstractmethod
     def temporal_forward(self, x: Tensor) -> Tensor:
         """Temporal layer forward pass, must be overridden in subclass.
