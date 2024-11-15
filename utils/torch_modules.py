@@ -654,13 +654,14 @@ class RobustStandardize(torch.nn.Module):
 
     The module is initialized with precomputed 0.95 quantile (Q95), which are then used to standardize the input data
     on-the-fly. Optionally, the inverse (destandardization) can be computed. Standardization ('robust', division by
-    the Q95) is meant for positive variables with large extreme values, such as runoff or discharge.
+    the Q95) is meant for positive variables with large extreme values, such as runoff or discharge. The transformed
+    values are also square-root transformed.
 
     Note that the data statistics should be computed from the training set!
 
     Equations:
-        - standardization (robust): x / Q95(x_global)
-        - destandardization (robust): x *  Q95(x_global)
+        - standardization (robust): power(x / Q95(x_global), 0.5)
+        - destandardization (robust): power(x *  Q95(x_global), 2)
 
     Shapes:
         In the forward call, the input tensor is expected to be batched. For sample-level standardization, use the `robust_standardize` and `robust_destandardize` methods,  respectively. The argument `features_dim` indicates 
@@ -711,7 +712,7 @@ class RobustStandardize(torch.nn.Module):
     def robust_standardize(self, x: Tensor, is_batched: bool = False) -> Tensor:
         """Standardize input x.
 
-        Equation: x / Q95(x_global)
+        Equation: sqrt(x / Q95(x_global))
 
         Args:
             x (Tensor): The input tensor to standardize. The stats (`q95`) are applied over dimension
@@ -724,12 +725,12 @@ class RobustStandardize(torch.nn.Module):
         """
         q95s = self._expand_stats_to_x(x=x, is_batched=is_batched)
 
-        return x / q95s
+        return torch.sqrt(x / q95s)
 
     def robust_destandardize(self, x: Tensor, is_batched: bool = False) -> Tensor:
         """Destandardize input x.
 
-        Equation: x * Q95(x_global)
+        Equation: square(x) * Q95(x_global)
 
         Args:
             x (Tensor): The input tensor to destandardize. The stats (`q95`) are applied over dimension
@@ -742,7 +743,7 @@ class RobustStandardize(torch.nn.Module):
         """      
         q95s = self._expand_stats_to_x(x=x, is_batched=is_batched)
 
-        return x * q95s
+        return torch.square(x) * q95s
 
     @staticmethod
     def make_kwargs(
