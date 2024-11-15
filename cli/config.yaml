@@ -99,4 +99,4 @@ criterion:
   es_length: 1
   noise_dim: 10
   noise_std: 1
-  num_members: 1000
+  num_members: 100
