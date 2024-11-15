@@ -303,7 +303,7 @@ class TemporalNet(LightningNet, abc.ABC):
                 kernel_size=1
         )
 
-        self.out_activation = torch.nn.Softplus()
+        self.out_activation = torch.nn.Softplus(beta=3)  # beta=3 for sharper transition.
 
     """Implements a temporal base lightning network."""
     @abc.abstractmethod
