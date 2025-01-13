@@ -100,7 +100,7 @@ class RegressionLoss(nn.Module):
             self,
             input: Tensor,
             target: Tensor,
-            basin_std: Tensor | None = None) -> Tensor:
+            basin_std: Tensor | None = None) -> tuple[Tensor, dict[str, Tensor]]:
         """Forward call, calculate loss from input and target, must have same shape.
 
         Args:
@@ -108,7 +108,7 @@ class RegressionLoss(nn.Module):
             target: Target of shape (B x ...)
 
         Returns:
-            The loss, a scalar.
+            The loss, a single value tensor, and a dictionary of loss components to log.
         """
 
         mask = target.isfinite()
@@ -125,7 +125,7 @@ class RegressionLoss(nn.Module):
         else:
             err = element_error.sum() / mask.sum()
 
-        return err
+        return err, {'loss': err}
 
     def __repr__(self) -> str:
         criterion = self.criterion
@@ -170,7 +170,7 @@ class EnergyLoss(nn.Module):
             self,
             input0: Tensor,
             input1: Tensor,
-            target: Tensor) -> Tensor:
+            target: Tensor) -> tuple[Tensor, dict[str, Tensor]]:
         """Forward call, calculate loss from input0, input1,  and target, must have same shape.
 
         Args:
@@ -179,7 +179,7 @@ class EnergyLoss(nn.Module):
             target (torch.Tensor): (batch, sequence) iid samples from the true distribution.
 
         Returns:
-            The loss, a scalar.
+            The loss, a single value tensor, and a dictionary of loss components to log.
         """
 
         EPS = 0 if float(self.beta).is_integer() else 1e-5
@@ -207,15 +207,15 @@ class EnergyLoss(nn.Module):
         )
 
         # (batch, L)
-        s2 = self.mean_masked((vector_norm(input_diff, 2, dim=-1) + EPS).pow(self.beta), mask_num_finite, dim=-1)
+        s2 = self.mean_masked((vector_norm(input_diff, 2, dim=-1) + EPS).pow(self.beta), mask_num_finite, dim=-1) / 2
 
         # (batch, L)
-        element_loss = s1 - s2 / 2
+        element_loss = s1 - s2
 
         # (1,)
         loss = element_loss.mean()
 
-        return loss
+        return loss, {'loss': loss, 'residual_term': s1.mean(), 'dispersion_term': s2.mean()}
 
     def reshape_to_es_length(self, x: Tensor, es_length: int) -> Tensor:
         if x.ndim == 1:

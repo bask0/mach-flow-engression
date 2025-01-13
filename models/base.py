@@ -129,13 +129,13 @@ class LightningNet(pl.LightningModule):
 
         if self.loss_fn.criterion == 'es':
             target_hat1 = self(x=x,s=s)
-            loss = self.loss_fn(
+            loss, loss_log = self.loss_fn(
                 input0=target_hat0[..., num_cut:],
                 input1=target_hat1[..., num_cut:],
                 target=target[..., num_cut:]
             )
         else:
-            loss = self.loss_fn(
+            loss, loss_log = self.loss_fn(
                 input=target_hat0[..., num_cut:],
                 target=target[..., num_cut:],
             )
@@ -143,7 +143,7 @@ class LightningNet(pl.LightningModule):
         preds = None
 
         self.log_dict(
-            {f'{step_type}_loss': loss},
+            {f'{step_type}_{k}': v for k, v in loss_log.items()},
             prog_bar=True,
             on_step=True if step_type == 'train' else False,
             on_epoch=True,
