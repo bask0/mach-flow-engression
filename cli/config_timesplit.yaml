@@ -1,0 +1,26 @@
+data:
+  class_path: dataset.machflowdata.MachFlowDataModule
+  init_args:
+    train_window_size: 730
+    window_min_count: 30
+    train_num_samples_per_epoch: 30
+    warmup_size: 365
+    drop_all_nan_stations: true
+    num_cv_folds: -1
+    fold_nr: 0
+    use_additional_basins_as_training: true
+    train_tranges:
+    - "1961,2010"
+    valid_tranges:
+    - "2011,2016"
+    test_tranges:
+    - "2017,2022"
+    predict_tslice:
+    - "2011"
+    - "2022"
+    norm_features: true
+    norm_stat_features: true
+    norm_targets: true
+    batch_size: 32
+    num_workers: 4
+    seed: 19
