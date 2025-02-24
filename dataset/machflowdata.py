@@ -249,7 +249,8 @@ class MachFlowDataModule(pl.LightningDataModule):
             warmup_size (int, optional): The number of warmup staps to use for model spinup. Defaults to 365.
             drop_all_nan_stations (bool, optional): If True, only stations with at least one observation are used.
                 Applies for all modes but 'prediction'. Defaults to True.
-            num_cv_folds (int): The number of cross-validation sets (folds). Defaults to 6.
+            num_cv_folds (int): The number of cross-validation sets (folds). Defaults to 6. -1 means no spatial
+                cross-validation.
             fold_nr (int): The fold to use, a value in the range [0, num_cv_folds). Defaults to 0.
             use_additional_basins_as_training (bool): whether to use additional basins (such strongly affected by
                 humans) for training. Default is False.
@@ -515,6 +516,11 @@ class MachFlowDataModule(pl.LightningDataModule):
         Returns:
             tuple[list[str], list[str], list[str]]: The training, validation, and test basin IDs.
         """
+
+        if self.num_cv_folds == -1:
+            folds = folds.sel(station=basins).load()
+            basins = folds.where(folds > 0, drop=True).station.values.tolist()
+            return basins, basins, basins
 
         if self.fold_nr not in range(self.num_cv_folds):
             raise ValueError(
