@@ -174,11 +174,16 @@ def get_cv_search_space(num_folds: int) -> Type[SearchSpace]:
         IS_XVAL = True
 
         def __init__(self, trial: optuna.Trial) -> None:
+            if num_folds == -1:
+                folds = [0]
+            else:
+                folds = list(range(num_folds))
+
             config = {
                 'data': {
                     'class_path': 'dataset.machflowdata.MachFlowDataModule',
                     'init_args': {
-                        'fold_nr': trial.suggest_categorical('fold_nr', list(range(num_folds)))
+                        'fold_nr': trial.suggest_categorical('fold_nr', folds)
                     }
                 },
             }
