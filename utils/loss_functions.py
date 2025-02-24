@@ -8,6 +8,89 @@ from torch.linalg import vector_norm
 logger = logging.getLogger('pytorch_lightning')
 
 
+class BaseQLoss(nn.Module):
+    def __init__(self, reduction='none') -> None:
+        r"""Creates element-wise distribution-based loss without reduction. Must be subclassed.
+
+        Note: The error function `error_function` mut be overridden in the subclass.
+
+        Shape:
+            - mean: (batch_size, ...).
+            - target: (batch_size, ...), same shape as the mean.
+            - output: (batch_size, ...), same shape as the mean.
+
+        Args:
+            reduction: for compatibility, has no effect.
+        """
+        super().__init__()
+
+    def forward(
+            self,
+            input: Tensor,
+            target: Tensor,
+            tau: float | Tensor) -> Tensor:
+        """Compute the losss.
+
+        Args:
+            input: Predicted mean of shape (B, ...)
+            target: Target of shape (B, ...)
+            tau: The probability to evaluate, in range [0, 1].
+
+        Returns:
+            Loss per batch element of shape (B, ...)
+        """
+
+        if not (0.0 <= tau <= 1.0):
+            raise ValueError(
+                f'argument `tau` is out of range [0, 1] with `tau`={tau}`'
+            )
+
+        err = self.error_function(input=input, target=target, tau=tau)
+
+        return err
+
+    def error_function(self, input: Tensor, target: Tensor, tau: float | Tensor) -> Tensor:
+        raise NotImplementedError(
+            '`err_fun` must be defined in subclass.'
+        )
+
+
+class QLoss(BaseQLoss):
+
+    def __init__(self, reduction='none') -> None:
+        r"""Creates element-wise quantile loss without reduction.
+
+        Shape:
+            - mean: (batch_size, ...).
+            - target: (batch_size, ...), same shape as the mean.
+            - output: (batch_size, ...), same shape as the mean.
+        """
+        super().__init__()
+
+    def error_function(self, input: Tensor, target: Tensor, tau: float | Tensor) -> Tensor:
+        err = target - input
+        err = torch.max((tau - 1) * err, tau * err)
+        return err
+
+
+class ELoss(BaseQLoss):
+
+    def __init__(self, reduction='none') -> None:
+        r"""Creates element-wise expectile loss without reduction.
+
+        Shape:
+            - mean: (batch_size, ...).
+            - target: (batch_size, ...), same shape as the mean.
+            - output: (batch_size, ...), same shape as the mean.
+        """
+        super().__init__()
+
+    def error_function(self, input: Tensor, target: Tensor, tau: float | Tensor) -> Tensor:
+        err = target - input
+        err2 = err ** 2
+        return torch.where(err >= 0.0, err2 * tau, err2 * (1 - tau))
+
+
 class RegressionLoss(nn.Module):
     """Loss functions that ignore NaN in target.
     The loss funtion allows for having missing / non-finite values in the target.
@@ -75,12 +158,13 @@ class RegressionLoss(nn.Module):
 
         criterion = criterion.lower()
 
-        if criterion not in self.LOSS_FUNCTIONS:
+        if criterion not in (self.LOSS_FUNCTIONS + self.LOSS_FUNCTIONS_WITH_TAU):
             loss_functions_str = '(\'' + '\' | \''.join(self.LOSS_FUNCTIONS) + '\')'
             raise ValueError(
                 f'argument `criterion` must be one of {loss_functions_str}, is \'{criterion}\'.'
             )
 
+        self.has_tau = criterion in self.LOSS_FUNCTIONS_WITH_TAU
         self.criterion = criterion
         self.sample_wise = sample_wise
 
@@ -94,18 +178,24 @@ class RegressionLoss(nn.Module):
             'l1': nn.L1Loss,
             'l2': nn.MSELoss,
             'huber': nn.HuberLoss,
+            'quantile': QLoss,
+            'expectile': ELoss,
         }[self.criterion](**loss_fn_args)
 
     def forward(
             self,
             input: Tensor,
             target: Tensor,
+            tau: float | Tensor | None = None,
             basin_std: Tensor | None = None) -> tuple[Tensor, dict[str, Tensor]]:
         """Forward call, calculate loss from input and target, must have same shape.
 
         Args:
             input: Predicted mean of shape (B x ...)
             target: Target of shape (B x ...)
+            tau: the probability for quantile or expectile loss, a float in the range [0, 1].
+            basin_std: The observation time series standard deviation with shape (B, ). Exclusively required
+                for 'nse' criterion.
 
         Returns:
             The loss, a single value tensor, and a dictionary of loss components to log.
@@ -115,7 +205,14 @@ class RegressionLoss(nn.Module):
         # By setting target to input for NaNs, we set gradients to zero.
         target = target.where(mask, input)
 
-        element_error = self.loss_fn(input, target)
+        if self.criterion in ['quantile', 'expectile']:
+            if tau is None:
+                raise ValueError(
+                    f'argument `tau` required with `criterion`=\'{self.criterion}\'.'
+                )
+            element_error = self.loss_fn(input, target, tau)
+        else:
+            element_error = self.loss_fn(input, target)
 
         if self.sample_wise:
             red_dims = tuple(range(1, element_error.ndim))
