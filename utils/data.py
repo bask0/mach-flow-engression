@@ -35,10 +35,10 @@ def load_xval_test_set(
 
     paths = glob(os.path.join(xval_dir, 'fold_*/preds.zarr'))
 
-    if (n := len(paths))!= num_expected_folds:
-        raise ValueError(
-            f'number of files found ({n}) not equal \'num_expected_folds\' ({num_expected_folds}) in \'{xval_dir}\'.'
-        )
+    # if (n := len(paths))!= num_expected_folds:
+    #     raise ValueError(
+    #         f'number of files found ({n}) not equal \'num_expected_folds\' ({num_expected_folds}) in \'{xval_dir}\'.'
+    #     )
 
     ds = xr.open_mfdataset(
         paths=paths,
