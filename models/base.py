@@ -10,7 +10,7 @@ import abc
 
 from utils.loss_functions import RegressionLoss, EnergyLoss
 from utils.types import BatchPattern, ReturnPattern
-from utils.torch_modules import DataTansform, EncodingModule, Transform, SeqZeroPad, TemporalCombine
+from utils.torch_modules import DataTansform, EncodingModule, PadTau
 
 
 # Ignore anticipated PL warnings.
@@ -44,6 +44,7 @@ class LightningNet(pl.LightningModule):
             es_beta: float= 1.0,
             es_length: int = 1,
             num_members: int = 10,
+            inference_taus: list[float] = [0, 1, 0.1],
             norm_args_features: dict | None = None,
             norm_args_stat_features: dict | None = None,
             norm_args_targets: dict | None = None
@@ -56,6 +57,8 @@ class LightningNet(pl.LightningModule):
                 effective for criterion='es'.
             es_length: length of sequence fed jointly into the loss function, an integer > 0, default is 1, only
                 effective for criterion='es'.
+            inference_taus: The tau values (probabilities) to evaluate in inference. Only applies for
+                distribution-aware criterions. [start, stop, step].
             num_members: Number of members to sample in prediction.
         """
 
@@ -65,6 +68,10 @@ class LightningNet(pl.LightningModule):
             self.loss_fn = EnergyLoss(beta=es_beta, es_length=es_length)
         else:
             self.loss_fn = RegressionLoss(criterion=criterion, sqrt_transform=False)
+
+        self.sample_tau = self.loss_fn.has_tau
+        self.inference_taus = list(
+            np.arange(inference_taus[0], inference_taus[1] + 1e-10, inference_taus[2])) if self.sample_tau else [0.5]
 
         self.num_members = num_members
 
@@ -99,11 +106,13 @@ class LightningNet(pl.LightningModule):
     def shared_step(
             self,
             batch: BatchPattern,
+            tau: float | None,
             step_type: str) -> tuple[Tensor, ReturnPattern | None]:
         """A single training step shared across specialized steps that returns the loss and the predictions.
 
         Args:
             batch: the bach.
+            tau: float, the tau value for the loss function.
             step_type: the step type (training mode), one of (`train`, `val`, `test`, `pred`).
 
         Returns:
@@ -118,21 +127,28 @@ class LightningNet(pl.LightningModule):
         num_cut = batch.coords.warmup_size[0]
         batch_size = target.shape[0]
 
-        target_hat0 = self(x=x,s=s)
+        target_hat0 = self(x=x, s=s, tau=tau)
 
         if step_type == 'pred':
             preds = ReturnPattern(
                 dtargets=self.denormalize_target(target_hat0.detach()).cpu(),
                 coords=batch.coords,
+                tau=tau
             )
             return torch.zeros(1), preds
 
         if self.loss_fn.criterion == 'es':
-            target_hat1 = self(x=x,s=s)
+            target_hat1 = self(x=x, s=s, tau=tau)
             loss, loss_log = self.loss_fn(
                 input0=target_hat0[..., num_cut:],
                 input1=target_hat1[..., num_cut:],
                 target=target[..., num_cut:]
+            )
+        elif self.sample_tau:
+            loss, loss_log = self.loss_fn(
+                input=target_hat0[..., num_cut:],
+                target=target[..., num_cut:],
+                tau=tau
             )
         else:
             loss, loss_log = self.loss_fn(
@@ -166,7 +182,12 @@ class LightningNet(pl.LightningModule):
             Tensor: The batch loss.
         """
 
-        loss, _ = self.shared_step(batch, step_type='train')
+        if self.sample_tau:
+            tau = np.random.uniform()
+        else:
+            tau = None
+
+        loss, _ = self.shared_step(batch, tau=tau, step_type='train')
 
         return loss
 
@@ -182,7 +203,7 @@ class LightningNet(pl.LightningModule):
 
         """
 
-        loss, _ = self.shared_step(batch, step_type='val')
+        loss, _ = self.shared_step(batch, tau=0.5, step_type='val')
 
         return {'val_loss': loss}
 
@@ -198,7 +219,7 @@ class LightningNet(pl.LightningModule):
 
         """
 
-        loss, _ = self.shared_step(batch, step_type='test')
+        loss, _ = self.shared_step(batch, tau=0.5, step_type='test')
 
         return {'test_loss': loss}
 
@@ -218,9 +239,14 @@ class LightningNet(pl.LightningModule):
 
         member_preds = []
 
-        for _ in range(self.num_members):
-            _, preds = self.shared_step(batch, step_type='pred')
-            member_preds.append(preds)
+        if self.sample_tau:
+            for tau in self.inference_taus:
+                _, preds = self.shared_step(batch, tau=tau, step_type='pred')
+                member_preds.append(preds)
+        else:
+            for _ in range(self.num_members):
+                _, preds = self.shared_step(batch, tau=None, step_type='pred')
+                member_preds.append(preds)
 
         return member_preds
 
@@ -267,6 +293,10 @@ class TemporalNet(LightningNet, abc.ABC):
         self.noise_dim = noise_dim
         self.noise_std = noise_std
 
+        # Pad tau for quantile/expectile loss.
+        if self.sample_tau:
+            self.pad_tau = PadTau()
+
         # Static input encoding
         self.static_encoding = EncodingModule(
             num_in=num_static_in,
@@ -277,9 +307,14 @@ class TemporalNet(LightningNet, abc.ABC):
             activation_last=torch.nn.Tanh()
         )
 
+        if self.sample_tau:
+            extra_dim = 1
+        else:
+            extra_dim = self.noise_dim
+
         # Dynamic input encoding
         self.dynamic_encoding = EncodingModule(
-            num_in=num_dynamic_in + self.noise_dim,
+            num_in=num_dynamic_in + extra_dim,
             num_enc=model_dim,
             num_layers=2,
             dropout=enc_dropout,
@@ -323,7 +358,7 @@ class TemporalNet(LightningNet, abc.ABC):
             A tensor of same shape as the input.
         """
 
-    def forward(self, x: Tensor, s: Tensor) -> Tensor:
+    def forward(self, x: Tensor, s: Tensor, tau: float | None) -> Tensor:
         """Temoral layer with encoding pre-fusion.
 
         Args:
@@ -336,7 +371,9 @@ class TemporalNet(LightningNet, abc.ABC):
         """
 
         # Add noise to dynamic input.
-        if self.noise_dim > 0:
+        if self.sample_tau:
+            x = self.pad_tau(x=x, tau=tau)
+        elif self.noise_dim > 0:
             batch_size, channels, sequence = x.shape
             e = torch.randn(
                 batch_size,

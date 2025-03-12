@@ -43,3 +43,4 @@ class ReturnPattern:
     """Class defining MachFlowData return pattern."""
     dtargets: Tensor
     coords: BatchCoords
+    tau: float | None

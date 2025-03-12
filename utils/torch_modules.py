@@ -497,12 +497,14 @@ class PadTau(torch.nn.Module):
         super().__init__()
 
     def forward(self, x: Tensor, tau: float) -> Tensor:
-        if (ndim := x.ndim) != 3:
+        if x.ndim == 2:
+            return torch.nn.functional.pad(x, (0, 1, 0, 0), mode='constant', value=tau)
+        elif x.ndim == 3:
+            return torch.nn.functional.pad(x, (0, 0, 0, 1, 0, 0), mode='constant', value=tau)
+        else:
             raise ValueError(
-                f'input must have three dimensions (batch, channel, sequence), has {ndim}.'
+                f'input must have 2 or 3 dimensions (batch, channel, sequence), has {x.ndim}.'
             )
-
-        return torch.nn.functional.pad(x, (0, 0, 0, 1, 0, 0), mode='constant', value=tau)
 
     def __repr__(self) -> str:
         return 'PadTau()'

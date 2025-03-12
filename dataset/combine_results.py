@@ -122,7 +122,11 @@ def postprocess_results(
     t = time.time()
 
     # Get all configuration directories.
-    config_dirs = glob(os.path.join(runs_dir, 'beta*/xval'))
+    try:
+        config_dirs = glob(os.path.join(runs_dir, 'beta*/xval'))
+
+    except IndexError as e:
+        config_dirs = glob(os.path.join(runs_dir, 'default/xval'))
 
     # Load a single dataset and drop the predictions (we add them later below).
     print('> Loading data.')
@@ -161,7 +165,7 @@ def postprocess_results(
 
     for var in ds.data_vars:
         if var == 'Qmm_mod':
-            chunks = (-1, -1, -1, 100, -1, 1000,)
+            chunks = (1, 1, 1, -1, -1, 1000,)
         elif 'time' in ds[var].dims:
             chunks = (-1, 1000,)
         else:

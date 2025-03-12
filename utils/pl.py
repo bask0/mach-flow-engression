@@ -12,6 +12,7 @@ import optuna
 import warnings
 from typing import TYPE_CHECKING
 
+from models.temporal_nets import TemporalNet
 from utils.types import ReturnPattern
 
 if TYPE_CHECKING:
@@ -33,7 +34,7 @@ class PredictionWriter(BasePredictionWriter):
     def write_on_epoch_end(
             self,
             trainer: 'pl.Trainer',
-            pl_module: 'pl.LightningModule',
+            pl_module: TemporalNet,
             predictions: Sequence[list[ReturnPattern]],
             batch_indices: Sequence[Any]) -> None:
 
@@ -63,16 +64,25 @@ class PredictionWriter(BasePredictionWriter):
 
         for t, target in enumerate(pdl.dataset.targets):
             new_target_name = target + '_mod'
-            da = xr.full_like(ds[target], np.nan).expand_dims(member=range(n_members)).copy().compute()
+            if pl_module.sample_tau:
+                members = pl_module.inference_taus
+            else:
+                members = range(n_members)
+            da = xr.full_like(ds[target], np.nan).expand_dims(member=members).copy().compute()
             for outputs in predictions:
                 for m, member in enumerate(outputs):
                     coords = member.coords
+                    if pl_module.sample_tau:
+                        member_id = member.tau
+                    else:
+                        member_id = m
+
                     for i, (station, start_date, end_date) in enumerate(
                             zip(coords.station, coords.start_date, coords.end_date)):
                         da.loc[{
                             'station': station,
                             'time': slice(start_date, end_date),
-                            'member': m
+                            'member': member_id
                         }] = member.dtargets[i, t, warmup_size:].detach().numpy()
 
             out_ds[new_target_name] = da
@@ -80,7 +90,7 @@ class PredictionWriter(BasePredictionWriter):
             encoding.update(
                 {
                     new_target_name: {
-                        'chunks': (1, 40, -1),
+                        'chunks': (10, 40, -1),
                     }
                 }
             )
@@ -183,6 +193,13 @@ class MyLightningCLI(LightningCLI):
             '--criterion.num_members',
             type=int,
             help='the number of members to predict.')
+        parser.add_argument(
+            '--criterion.inference_taus',
+            nargs='+',
+            type=float,
+            default=[0.0, 1.0, 0.1],
+            help='[start, stop, step] taus to evaluate in inference; only applies for distribution-aware criterions.')
+
 
         # Linking args
         # -------------------------------------
@@ -210,6 +227,8 @@ class MyLightningCLI(LightningCLI):
             'criterion.noise_std', 'model.init_args.noise_std', apply_on='parse')
         parser.link_arguments(
             'criterion.num_members', 'model.init_args.num_members', apply_on='parse')
+        parser.link_arguments(
+            'criterion.inference_taus', 'model.init_args.inference_taus', apply_on='parse')
 
     @staticmethod
     def id2version(prefix: str, id: int) -> str:
