@@ -259,6 +259,7 @@ class EnergyLoss(nn.Module):
 
         super(EnergyLoss, self).__init__()
 
+        self.has_tau = False
         self.beta = beta
         self.es_length = es_length
         self.criterion = 'es'
