@@ -8,9 +8,6 @@ COMMAND="python ${SCRIPT_PATH} --model LSTM -c cli/config_timesplit.yaml --overw
 betas=(0.3333 0.6666 1.0 1.3333 1.6666)
 es_lengths=(1 5)
 noise_dims=(5 20 100)
-# betas=(0.3333)
-# es_lengths=(1)
-# noise_dims=(20)
 
 # Loop over each beta
 for beta in "${betas[@]}"; do
