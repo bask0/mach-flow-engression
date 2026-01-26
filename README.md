@@ -1,6 +1,6 @@
 # Engression-LSTM for Generative Streamflow Regression
 
-Machine-learning toolbox and experiments for Engression-LSTM paper.
+Machine-learning toolbox and experiments for Engression-LSTM paper ([link](https://agupubs.onlinelibrary.wiley.com/doi/10.1029/2025GL120122)).
 
 This repository contains code, configuration and notebooks used to train and evaluate temporal models for streamflow regression tasks. It provides utilities to prepare datasets, define models, run experiments and analyze results.
 
@@ -76,3 +76,17 @@ Configuration is YAML-based and lives in `cli/`. The main config keys control da
 ## Citation
 
 Details follow as soon as the associated paper is published.
+
+```tex
+@article{kraft_modeling_2026,
+  author = {Kraft, Basil and Stalder, Steven and Aeberhard, William H. and Ruiz, Nicolás Harrington and Meinshausen, Nicolai and Shen, Xinwei and Gudmundsson, Lukas},
+  title = {Modeling Uncertainty With Engression: A Deep Generative Time-Series Approach},
+  journal = {Geophysical Research Letters},
+  volume = {53},
+  number = {2},
+  pages = {e2025GL120122},
+  doi = {https://doi.org/10.1029/2025GL120122},
+  url = {https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/2025GL120122},
+  year = {2026}
+}
+```
